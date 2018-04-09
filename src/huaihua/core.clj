@@ -7,10 +7,6 @@
   (let [map (or map {})]
     (throw (ex-info msg map))))
 
-(defn- assert! [pred & [msg map]]
-  (let [msg (or msg "Assert failed.")]
-    (when-not pred (error! msg map))))
-
 (def ^:private gramma
   "TEXT = ( TAG | NORMAL_STR )*
   TAG = OPEN_TOKEN, TEXT, CLOSE_TOKEN
@@ -21,96 +17,76 @@
 
 (def ^:private parse (insta/parser gramma :start :TEXT))
 
-(defn- struct1 [ep]
-  (match [ep]
-    [[:TEXT & rest-text]]
-    (mapv struct1 rest-text)
+(def ^:private root-label :root)
 
-    [[:TAG
-      [:OPEN_TOKEN [:SYMBOL open-symbol]]
-      [:TEXT & tag-text]
-      [:CLOSE_TOKEN [:SYMBOL close-symbol]]]]
-    (->> (mapv struct1 tag-text) (into [open-symbol]))
+(defn- ast [ep]
+  (letfn [(get-ast [ep]
+            (match [ep]
+              [[:TEXT & rest-text]]
+              (mapv get-ast rest-text)
 
-    [([:NORMAL_STR str] :seq)]
-    str
+              [[:TAG
+                [:OPEN_TOKEN [:SYMBOL open-symbol]]
+                [:TEXT & tag-text]
+                [:CLOSE_TOKEN [:SYMBOL close-symbol]]]]
+              {:label (keyword open-symbol)
+               :children (mapv get-ast tag-text)}
 
-    :else
-    (throw (RuntimeException. "Unexpected error when parse"))))
+              [([:NORMAL_STR str] :seq)]
+              str
 
-(defn- compile* [input]
-  (cond
-    (vector? input)
-    (let [[first & rest] input]
-      (assert (string? first))
-      {:name (keyword first)
-       :children (mapv compile* rest)})
+              :else
+              (throw (RuntimeException. "Unexpected error when parse"))))]
+    {:label root-label
+     :children (get-ast ep)}))
 
-    (string? input)
-    input
+(defn template [s]
+  (-> (parse s) (ast)))
 
-    :else
-    (throw
-      (IllegalArgumentException.
-        (format "Argument should vector or string: %s" input)))))
+(defn get-snippet [snippet label]
+  (letfn [(find-node [struct]
+            (cond
+              (map? struct)
+              (if (= (:label struct) label)
+                struct
+                (some find-node (:children struct)))
 
-(def ^:private root-name "root")
+              (vector? struct)
+              (some find-node struct)
 
-(defn- compile [struct1]
-  (-> (into [root-name] struct1)
-      (compile*)))
+              (string? struct)
+              nil
 
-(defn get-snippet
-  ([s]
-   (-> (parse s)
-       (struct1)
-       (compile)))
-  ([s node-key]
-   (letfn [(find-node [struct]
-             (cond
-               (map? struct)
-               (if (= (:name struct) node-key)
-                 struct
-                 (some find-node (:children struct)))
+              :else (error! "Unknown Struct: " {:struct struct})))]
+    (if-let [node (find-node snippet)]
+      node
+      (error! "Cannot find this node."))))
 
-               (vector? struct)
-               (some find-node struct)
-
-               (string? struct)
-               nil
-
-               :else (error! "Unknown Struct: " {:struct struct})))]
-     (if-let [node (find-node (get-snippet s))]
-       node
-       (error! "Cannot find this node.")))))
-
-(defn emit [struct]
-  (cond
-    (map? struct)
-    (apply str (mapv emit (:children struct)))
-
-    (vector? struct)
-    (apply str (map emit (:children struct)))
-
-    (string? struct)
-    struct
-
-    :else (error! "Unknown Struct: " {:struct struct})))
-
-(defn transform [struct & {:as key-transforms}]
+(defn transform [struct & [label-transforms]]
+  {:pre [(map? label-transforms)]}
   (letfn [(do-transform [struct]
             (cond
               (map? struct)
-              (let [{:keys [name children]} struct
+              (let [{:keys [label children]} struct
                     s (->> (map do-transform children)
                            (apply str))
-                    f (get key-transforms name)]
-                (if f (do (assert! (fn? f)) (f s)) s))
+                    v (get label-transforms label)]
+                (if v
+                  (cond
+                    (fn? v) (v s)
+                    (number? v) (str v)
+                    (string? v) v
+                    (keyword? v) (name v)
+                    :else (error! "Should pass fn, string, number, keyword."))
+                  s))
 
               (vector? struct)
               (->> (map do-transform struct)
                    (apply str))
 
               (string? struct)
-              struct))]
+              struct
+
+              :else
+              (error! (format "Unknown struct." {:struct struct}))))]
     (do-transform struct)))

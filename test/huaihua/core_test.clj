@@ -1,6 +1,7 @@
 (ns huaihua.core-test
   (:require [clojure.test :refer :all])
-  (:require [huaihua.core :as h]))
+  (:require [huaihua.core :as h])
+  (:import (clojure.lang ExceptionInfo)))
 
 (deftest test-get-snippet
   (testing "testing get snippet"
@@ -41,7 +42,9 @@
       (is (= "text1text2 [ I update layer2 ]text4[ add some thing after updated layer 2 ]text6"
             (h/transform snippet
               :layer1 (fn [x] (str x "[ add some thing after updated layer 2 ]"))
-              :layer2 (fn [_] " [ I update layer2 ]")))))))
+              :layer2 (fn [_] " [ I update layer2 ]"))))
+
+      (is (thrown? ExceptionInfo (h/transform-all-labels snippet :layer2 "abc"))))))
 
 (deftest test-transform-many-times
   (testing "testing one params occur in many places"
@@ -50,3 +53,11 @@
       (= "text1 [ updated layer1 ]text3 [ updated layer1 ]text6"
          (h/transform snippet
            :layer1 (fn [_] " [ updated layer1 ]"))))))
+
+
+(comment
+  (def s (slurp (io/resource "example.txt")))
+  (def snippet (get-snippet s))
+  (transform snippet
+             :title "程序员"
+             :introduce (fn [x] (str x "在倍洽开心的写bug,"))))
