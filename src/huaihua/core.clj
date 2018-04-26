@@ -70,15 +70,15 @@
               (let [{:keys [label children]} struct
                     s (->> (map do-transform children)
                            (apply str))
-                    v (get label-transforms label)]
-                (if v
+                    v (get label-transforms label ::not-found)]
+                (if (= v ::not-found)
+                  s
                   (cond
                     (fn? v) (v s)
                     (number? v) (str v)
                     (string? v) v
                     (keyword? v) (name v)
-                    :else (error! "Should pass fn, string, number, keyword."))
-                  s))
+                    :else (error! "Should pass fn, string, number, keyword."))))
 
               (vector? struct)
               (->> (map do-transform struct)
