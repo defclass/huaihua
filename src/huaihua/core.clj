@@ -10,10 +10,13 @@
 (def ^:private gramma
   "TEXT = ( TAG | NORMAL_STR )*
   TAG = OPEN_TOKEN, TEXT, CLOSE_TOKEN
-  NORMAL_STR = #\"[^{{}}]*\"
-  OPEN_TOKEN = <'{{'>,SYMBOL, <'}}'>
-  CLOSE_TOKEN = <'{{/'> SYMBOL <'}}'>
-  SYMBOL = #\"[a-zA-Z][a-zA-Z0-9-]+[a-zA-Z0-9]\" ")
+  NORMAL_STR = #'[^{{}}]*'
+  OPEN_TOKEN = OPEN_SEP, S, SYMBOL, S, CLOSE_SEP
+  CLOSE_TOKEN = OPEN_SEP, S, <'/'>, S, SYMBOL, S, CLOSE_SEP
+  SYMBOL = #'[a-zA-Z][a-zA-Z0-9-]+[a-zA-Z0-9]'
+  <OPEN_SEP> = <'{{'>
+  <CLOSE_SEP> = <'}}'>
+  <S> = <#'\\s*'>")
 
 (def ^:private parse (insta/parser gramma :start :TEXT))
 
